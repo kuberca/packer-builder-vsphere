@@ -18,15 +18,22 @@ type VirtualMachine struct {
 }
 
 type CloneConfig struct {
-	Name         string
-	Folder       string
-	Cluster      string
-	Host         string
-	ResourcePool string
-	Datastore    string
-	LinkedClone  bool
-	Network      string
-	Annotation   string
+	Name           string
+	Folder         string
+	Cluster        string
+	Host           string
+	ResourcePool   string
+	Datastore      string
+	LinkedClone    bool
+	Network        string
+	Annotation     string
+	VAppProperties map[string]string
+}
+
+type VAppProperty struct {
+	Name  string
+	Value string
+	Key   int32
 }
 
 type HardwareConfig struct {
@@ -259,6 +266,43 @@ func (vm *VirtualMachine) Clone(ctx context.Context, config *CloneConfig) (*Virt
 		}
 
 		configSpec.DeviceChange = append(configSpec.DeviceChange, config)
+	}
+	if config.VAppProperties != nil {
+		vm, err := vm.Info("config.vAppConfig")
+		if err != nil {
+			log.Printf("unable to retrieve vAppConfig %s", err.Error())
+			return nil, err
+		}
+		vmConfig := vm.Config.VAppConfig.GetVmConfigInfo()
+		var vappProperties []types.VAppPropertySpec
+		for k, v := range config.VAppProperties {
+			var propertyFound bool
+			for _, prop := range vmConfig.Property {
+				if prop.Id == k {
+					log.Printf("[DEBUG] setting property %s value to %s\n", prop.Id, v)
+					propertyFound = true
+					vappPropertySpec := types.VAppPropertySpec{
+						ArrayUpdateSpec: types.ArrayUpdateSpec{Operation: types.ArrayUpdateOperationEdit},
+						Info: &types.VAppPropertyInfo{
+							Id:           prop.Id,
+							DefaultValue: v,
+							Value:        v,
+							Key:          prop.Key,
+						},
+					}
+					vappProperties = append(vappProperties, vappPropertySpec)
+				}
+			}
+			if !propertyFound {
+				errMsg := fmt.Sprintf("unable to find vapp property %s", k)
+				log.Printf(errMsg)
+				return nil, errors.New(errMsg)
+			}
+		}
+		cloneSpec.Config.VAppConfig = &types.VmConfigSpec{
+			Property: vappProperties,
+		}
+
 	}
 
 	task, err := vm.vm.Clone(vm.driver.ctx, folder.folder, config.Name, cloneSpec)
