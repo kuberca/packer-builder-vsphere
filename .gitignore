@@ -7,3 +7,4 @@ test*.json
 crash.log
 packer_cache/
 vendor/
+testaaa
